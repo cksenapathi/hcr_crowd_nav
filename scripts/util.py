@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from collections import OrderedDict
 from scipy.spatial.transform import Rotation as R
 import numpy as np

@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 from pinocchio_robot_system import PinocchioRobotSystem
 import numpy as np
 import os
@@ -5,6 +7,7 @@ import sys
 from cvxpy import *
 from util import quaternion_multiply
 
+from unitree_legged_msgs.msg import MotorCmd
 
 
 class Robot:
@@ -121,7 +124,17 @@ class Robot:
         # objective += Add terminal cost
         Problem(Minimize(objective), constraints).solve(solver=OSQP)
         print('calc command objective type and value {} {}'.format(type(objective), objective))
-        return u[:,0].value, objective.value
+        cmds = []
+        u_cmd = u[:,0].value
+        for i in range(self.robot._n_a):
+            cmd = MotorCmd()
+            cmd.tau = u_cmd[i]
+            cmd.position = 2.146e9
+            cmd.velocity = 16000.
+            cmd.Kp = 0
+            cmd.Kd = 0
+            cmds.append(cmd)
+        return cmds, objective.value
 
             # s = (time[i] - start)/duration
             # - https://osqp.org/docs/examples/mpc.html#cvxpy

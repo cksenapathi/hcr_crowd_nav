@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import rvo2 as rvo
 import numpy as np
 from gazebo_msgs.msg import ModelState
