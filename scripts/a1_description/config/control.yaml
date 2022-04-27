@@ -1,0 +1,41 @@
+spot:
+  effort_controller:
+    type: "effort_controllers/JointGroupPositionController"
+    publish_rate: 50
+    joints:
+      - FL_hip_joint
+      - front_left_hip_y
+      - front_left_knee
+      - front_right_hip_x
+      - front_right_hip_y
+      - front_right_knee
+      - rear_left_hip_x
+      - rear_left_hip_y
+      - rear_left_knee
+      - rear_right_hip_x
+      - rear_right_hip_y
+      - rear_right_knee
+    FL_hip_joint:
+      pid: {p: 100.0, i: 0.0, d:20.0}
+    front_left_hip_y:
+      pid: {p: 5, i: 3, d: 0.9}
+    front_left_knee:
+      pid: {p: 5, i: 3, d: 0.9}
+    front_right_hip_x:
+      pid: {p: 5, i: 3, d: 0.9}
+    front_right_hip_y:
+      pid: {p: 5, i: 3, d: 0.9}
+    front_right_knee:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_left_hip_x:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_left_hip_y:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_left_knee:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_right_hip_x:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_right_hip_y:
+      pid: {p: 5, i: 3, d: 0.9}
+    rear_right_knee:
+      pid: {p: 5, i: 3, d: 0.9}
