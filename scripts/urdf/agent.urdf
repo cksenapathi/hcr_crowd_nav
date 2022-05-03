@@ -19,4 +19,14 @@
       </geometry>
     </collision>
   </link>
+
+  <link name="dummy">
+    <origin rpy="0 0 0" xyz="0 0 0"/>
+  </link>
+
+  <joint name="dummy_joint" type="planar">
+    <child link="base_link"/>
+    <parent link="dummy"/>
+    <axis xyz="0 0 1"/>
+  </joint>
 </robot>

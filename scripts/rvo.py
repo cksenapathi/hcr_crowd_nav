@@ -22,25 +22,27 @@ class RVO():
         self.orca_vel = np.zeros((self.num_agents, 2))
         self.agent_names = []
 
+
     def set_sim(self):
         model_states = []
         self.orca_pos = 30*np.random.rand(*self.orca_pos.shape) - 15
         norm_pos = np.divide(self.orca_pos, np.linalg.norm(self.orca_pos, axis=1)[:, np.newaxis])
         self.orca_vel = -self.speed * norm_pos # Moves all agents back towards center
-        print(f'rvo file set_sim looking at orca vel {self.orca_vel}')
+        # print(f'rvo file set_sim looking at orca vel {self.orca_vel}')
         for i in range(self.num_agents):
             self.agent_nums[i] = self.rvo_sim.addAgent(tuple(self.orca_pos[i,:]),
                 velocity=tuple(self.orca_vel[i,:]))
             self.agent_names.append(str(self.agent_nums[i]))
             state = ModelState()
             state.model_name = str(self.agent_nums[i])
-            state.pose = Pose(Point(self.orca_pos[i,0], self.orca_pos[i,1], 0),
+            state.pose = Pose(Point(self.orca_pos[i,0], self.orca_pos[i,1], 0.76),
                             Quaternion(0,0,0,1))
             state.twist = Twist(Vector3(self.orca_vel[i,0], self.orca_vel[i,1], 0),
                             Vector3(0, 0, 0))
             state.reference_frame = "world"
             model_states.append((self.agent_nums[i], state))
         return model_states
+
 
     def step(self):
         model_states = []
@@ -50,7 +52,7 @@ class RVO():
             self.orca_vel[i,:] = self.rvo_sim.getAgentVelocity(num)
             state = ModelState()
             state.model_name = str(self.agent_nums[i])
-            state.pose = Pose(Point(self.orca_pos[i,0], self.orca_pos[i,1], 0),
+            state.pose = Pose(Point(self.orca_pos[i,0], self.orca_pos[i,1], 0.76),
                             Quaternion(0,0,0,1))
             state.twist = Twist(Vector3(self.orca_vel[i,0], self.orca_vel[i,1], 0),
                             Vector3(0, 0, 0))

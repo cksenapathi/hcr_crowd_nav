@@ -6,7 +6,7 @@ import os
 import sys
 from cvxpy import *
 from util import quaternion_multiply
-
+from rospy import logwarn
 from unitree_legged_msgs.msg import MotorCmd
 
 
@@ -49,8 +49,8 @@ class Robot:
 
         self.robot.update_system(base_com_pos, base_com_quat, base_com_lin_vel,
         base_com_ang_vel, base_joint_pos, base_joint_quat, base_joint_lin_vel,
-        base_joint_ang_vel, dict(zip(self.joint_names, joint_pos),
-        dict(zip(self.joint_names, joint_vel))))
+        base_joint_ang_vel, dict(zip(self.joint_names, joint_pos)),
+        dict(zip(self.joint_names, joint_vel)))
         # link "trunk" vs com stuff
 
     def contact_jacobian(self):
@@ -61,8 +61,12 @@ class Robot:
 
 
     def discrete_dynamics(self, x_i, u_i, dt):
-        x_dot = np.zeros_like(x_i) #x[:19] is q, x[19:] is q_dot
+        x_dot = np.zeros(x_i.shape) #x[:19] is q, x[19:] is q_dot
+        # print(f"x_dot is empty?? \n{x_dot}")
+        # print(f"x_dot shape {x_dot.shape} \n x_i shape {x_i.shape}")
+        # print(f"x_dot[0:3] {x_dot[0:3]} \n x_i[19:22] {x_i[19:22]}")
         x_dot[0:3] = x_i[19:22] # linear velocity
+
         # Requires scalar last quaternions of angular velocity
         x_dot[3:7] = .5 * quaternion_multiply(np.hstack(x_i[22:25], [0]), x_i[3:7])
         x_dot[7:19] = x_i[25:] # joint angular velocity
@@ -77,60 +81,89 @@ class Robot:
 
     def calc_command(self, curr_state, wp: np.ndarray, time: np.ndarray):
         # Update Pinocchio system
-        self.update_system(curr_state[0:3], curr_state[3:7], curr_state[7:10],
-        curr_state[10:13], curr_state[0:3], curr_state[3:7], curr_state[7:10],
-        curr_state[10:13], curr_state[13:25], curr_state[25:37])
+        Jc = self.contact_jacobian()
+        # print(f'contact jacobian shape {Jc.shape}')
+        # print(f'U.T shape {self.U.T.shape}')
+        self.update_system(curr_state[0:3], curr_state[3:7], curr_state[19:22],
+        curr_state[22:25], curr_state[0:3], curr_state[3:7], curr_state[19:22],
+        curr_state[22:25], curr_state[7:19], curr_state[25:37])
 
-        pos = wp[:3, :]
-        quat = wp[3:7, :]
+        pos = wp[:, :3]
+        quat = wp[:, 3:7]
+
 
         start = time[0]
         dt = time[1] - time[0]
-        end = time[-1]
-        duration = end - start
-        assert(len(wp) == len(time))
-        vel = np.gradient(pos, time)
+        try:
+            assert(len(wp) == len(time))
+        except:
+            print(wp, time)
+        vel = np.gradient(pos, time, axis=0)
         # acc = np.gradient(vel, time)
         N = len(pos)
         n_a = self.robot._n_a
 
-
         x = Variable((self.robot._n_q+self.robot._n_q_dot, N+1))
-        u = Variable((self.robot._n_a+4, N)) # joint torques plus contact forces
-        x_0 = np.array([curr_state[0:7], curr_state[13:25], curr_state[7:13], curr_state[25:37]]).T
+        u = Variable((24, N)) # joint torques plus contact forces
+        x_0 = curr_state
 
-        Qu = np.eye(self._robot._n_a)
+        Qu = np.ones(self.robot._n_a)
         hip_trq_cost = 1.2
         shoulder_trq_cost = 1.0
         knee_trq_cost = 1.0
         Qu[0::3] = hip_trq_cost
         Qu[1::3] = shoulder_trq_cost
         Qu[2::3] = knee_trq_cost
+        Qu = np.diag(Qu)
 
         Q_pos = 10*np.eye(3)
         Q_quat = 7*np.eye(4)
         Q_ang_vel = np.diag([3,3,1])
         constraints = [x[:,0] == x_0]
         objective = 0
-        for i in range(N):           # position cost                  # orientation cost
-            objective += quad_form(x[:3,i]-pos[:,i],Q_pos) + quad_form(x[3:7,i]-quat[:,i],Q_quat)\
-                + quad_form(x[10:13,i], Q_ang_vel) + quad_form(u[:,i], Qu)
+        A = np.eye(len(x_0))
+        A[0:3, 19:22] += dt*np.eye(3)
+        wx = curr_state[22]
+        wy = curr_state[23]
+        wz = curr_state[24]
+        A[3:7, 3:7] += 0.5 * dt * np.array([[0, -wx, -wy, -wx],
+                                            [wx, 0, wz, -wy],
+                                            [wy, -wz, 0, wx],
+                                            [wz, wy, -wx, 0]])
+        A[7:19, 25:37] += dt * np.eye(self.robot._n_a)
+        inv_mass = np.linalg.pinv(self.robot.get_mass_matrix())
+        A[19:37, 19:37] -= dt * (inv_mass@(self.robot.get_coriolis()+self.robot.get_gravity()))
+        B = np.zeros((37, 24))
+        B[19:37, 0:12] = dt * (inv_mass@self.U.T)
+        B[19:37, 12:24] = dt * (inv_mass@Jc.T)
+        # B[]
+        for i in range(N):
+            objective += quad_form(x[:3,i]-pos[i,:],Q_pos) # pos cost
+            objective += quad_form(x[3:7,i]-quat[i,:],Q_quat) # quaternion
+            objective += quad_form(x[10:13,i], Q_ang_vel) # angular vel
+            objective += quad_form(u[:self.robot._n_a,i], Qu) # torque cost
 
-                    # angular velocity cost           # torque cost
-            constraints += [x[:,i+1] == self.discrete_dynamics(x[:,i], u[:,i], dt)]
+
+            constraints += [x[:,i+1] == A@x[:,i] +B@u[:,i]]
             constraints += [self.robot._joint_trq_limit[:,0] <= u[:n_a,i], u[:n_a,i] <= self.robot._joint_trq_limit[:,1]]
             constraints += [self.robot._joint_pos_limit[:,0] <= x[7:19,i], x[7:19,i] <= self.robot._joint_pos_limit[:,1]]
             constraints += [self.robot._joint_vel_limit[:,0] <= x[25:37,i], x[25:37,i] <= self.robot._joint_vel_limit[:,1]]
         # objective += Add terminal cost
-        Problem(Minimize(objective), constraints).solve(solver=OSQP)
-        print('calc command objective type and value {} {}'.format(type(objective), objective))
+        try:
+            Problem(Minimize(objective), constraints).solve(solver=OSQP)
+        except cvxpy.error.SolverError as e:
+            logwarn("Solver Failed: %s", e)
+            return [], 10000
+        # print('calc command objective type and value {} {}'.format(type(objective), objective.value))
         cmds = []
         u_cmd = u[:,0].value
+        if(u_cmd is None and objective.value is None):
+            return [], 1000
         for i in range(self.robot._n_a):
             cmd = MotorCmd()
             cmd.tau = u_cmd[i]
-            cmd.position = 2.146e9
-            cmd.velocity = 16000.
+            cmd.q = 2.146e9
+            cmd.dq = 16000.
             cmd.Kp = 0
             cmd.Kd = 0
             cmds.append(cmd)
